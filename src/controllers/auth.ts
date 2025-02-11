@@ -1,25 +1,25 @@
 import { Request, Response } from "express";
 import prisma from "../prisma/prismaClient";
 import { generateToken, hashPassword, verifyPassword } from "../utils/auth";
-import { Role } from "@prisma/client";
+import { Doctor, Patient, Role, User } from "@prisma/client";
 
-export async function register(req: Request, res: Response): Promise<void> {
+export async function register(req: Request, res: Response): Promise<Response> {
   try {
-    const email : string = req.body.email;
-    const password : string = req.body.password;
-    const role : string = req.body.role;
+    const email: string | null = req.body.email;
+    const password: string | null = req.body.password;
+    const role: string | null = req.body.role;
 
     if (!email || !password || !role) {
-      res.status(400).json({ error: "Email, password, and role are required" }).end();
+      return res.status(400).json({ error: "Email, password, and role are required" });
     }
 
     const existingUser = await prisma.user.findUnique({ where: { email } });
     if (existingUser) {
-      res.status(400).json({ error: "User already exists" }).end();
+      return res.status(400).json({ error: "User already exists" });
     }
 
     const hashedPassword = await hashPassword(password);
-    const newUser = await prisma.user.create({
+    const newUser: User = await prisma.user.create({
       data: {
         email,
         password: hashedPassword,
@@ -28,39 +28,55 @@ export async function register(req: Request, res: Response): Promise<void> {
       },
     });
 
+    let newUserRole: Doctor | Patient | null = null;
+
+    if (newUser.role === Role.DOCTOR) {
+      newUserRole = await prisma.doctor.create({
+        data: {
+          userId: newUser.id,
+          maxPatients: 10,
+        },
+      });
+    } else if (newUser.role === Role.PATIENT) {
+      newUserRole = await prisma.patient.create({
+        data: {
+          userId: newUser.id,
+        },
+      });
+    }
+
     const token = generateToken(newUser);
-    res.status(201).json({ user: newUser, token }).end();
+    return res.status(201).json({ user: newUser, newUserRole, token });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Something went wrong" }).end();
+    return res.status(500).json({ error: "Something went wrong" });
   }
 }
 
-export async function login(req: Request, res: Response): Promise<void> {
+export async function login(req: Request, res: Response): Promise<Response> {
   try {
     const { email, password } = req.body;
 
     if (!email || !password) {
-      res.status(400).json({ error: "Email and password are required" }).end();
+      return res.status(400).json({ error: "Email and password are required" });
     }
 
     const user = await prisma.user.findUnique({ where: { email } });
     if (!user) {
-      res.status(404).json({ error: "User not found" }).end();
-      return;
+      return res.status(404).json({ error: "User not found" });
     }
 
     const isPasswordValid = await verifyPassword(password, user.password);
     if (!isPasswordValid) {
-      res.status(401).json({ error: "Invalid password" }).end();
+      return res.status(401).json({ error: "Invalid password" });
     }
 
     const token = generateToken(user);
-    res.status(200).json({ user, token }).end();
+    return res.status(200).json({ user, token });
 
   } catch (err) {
     console.error(err);
-    res.status(500).json({ error: "Something went wrong" }).end();
+    return res.status(500).json({ error: "Something went wrong" });
   }
 }
