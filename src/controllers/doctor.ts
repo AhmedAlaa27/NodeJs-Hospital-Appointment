@@ -48,7 +48,8 @@ export const updateDoctor = async (req: Request, res: Response): Promise<Respons
 export const getAppointmentsOfDoctor = async (req: Request, res: Response): Promise<Response> => {
     try {
         const appointments: Appointment[] = await prisma.appointment.findMany({
-            where: { doctorId: Number(req.params.id) }
+            where: { doctorId: Number(req.params.id) },
+            include: { doctor: true, patient: true }
         });
         return res.status(200).json(appointments);
     } catch (error) {
